@@ -32,8 +32,19 @@ def _(dataset):
 
 @app.cell
 def _(dataset):
-    dataset[1]
-    return
+    class_names = set()
+    objects = dataset["objects"]
+    for row in objects:
+        for obj in row:
+                class_names.add(obj["name"])
+
+    class_names = list(class_names)
+
+    class_map = {
+        value: i for i, value in enumerate(class_names)
+    }
+    class_map
+    return (class_map,)
 
 
 @app.cell(hide_code=True)
@@ -48,7 +59,7 @@ def _(mo):
 def _():
     from PIL import ImageDraw
     def annotate_image(sample):
-    
+
         image = sample["image"]
         x_max,y_max = image.size
         objects = sample["objects"]
@@ -90,6 +101,54 @@ def _(dataset, mo):
 def _(annotate_image, dataset, idx):
 
     annotate_image(dataset[idx.value])
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    # Convert to a YOLO Dataset
+    """)
+    return
+
+
+@app.cell
+def _(class_map):
+    def objects_to_yolo(objects):
+        labels  = []
+        for obj in objects:
+            class_id = class_map[obj["name"]]
+            for box in obj["boxes"]:
+                x1, y1,x2,y2 = box
+                width = x2-x1
+                height = y2-y1
+                x_center = (x1+x2)/2
+                y_center = (y1+y2)/2
+
+                labels.append(f"{class_id} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}")
+        return labels
+
+    return (objects_to_yolo,)
+
+
+@app.cell
+def _(objects_to_yolo):
+    def convert_to_yolo(sample):
+        sample["yolo_annotations"] = objects_to_yolo(sample["objects"])
+        return sample
+
+    return (convert_to_yolo,)
+
+
+@app.cell
+def _(convert_to_yolo, dataset):
+    yolo_dataset = dataset.map(convert_to_yolo)
+    return (yolo_dataset,)
+
+
+@app.cell
+def _(yolo_dataset):
+    yolo_dataset[0]
     return
 
 
