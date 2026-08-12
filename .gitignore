@@ -1,0 +1,61 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+__marimo__/
+.marimo.lock
+# Virtual environments
+.venv
+.ipynb_checkpoints/
+*.ipynb
+
+# --- Data & artifacts (CV = big files, never commit raw) ---
+data/
+datasets/
+*.h5
+*.hdf5
+*.npy
+*.npz
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.tar
+*.zip
+
+# --- Outputs / experiment tracking ---
+outputs/
+runs/
+logs/
+wandb/
+mlruns/
+lightning_logs/
+checkpoints/
+
+# --- Media (CV-specific: don't commit images/video generated during runs) ---
+*.jpg
+*.jpeg
+*.png
+*.mp4
+*.avi
+!docs/**/*.png
+!docs/**/*.jpg
+
+# --- IDE / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# --- Env/secrets ---
+.env
+.env.*
+*.pem
+
+# --- Caches ---
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
