@@ -8,7 +8,7 @@ app = marimo.App(width="medium")
 def _():
     import marimo as mo
 
-    return
+    return (mo,)
 
 
 @app.cell
@@ -20,13 +20,14 @@ def _():
 
 @app.cell
 def _(load_dataset):
-    dataset = load_dataset("vikhyatk/uav-pdd2023")
+    dataset = load_dataset("vikhyatk/uav-pdd2023", split="train")
     return (dataset,)
 
 
 @app.cell
-def _(dataset):
-    dataset
+def _(dataset, mo):
+    img = dataset[3]["image"]
+    mo.hstack([img, img.convert("L")])
     return
 
 
