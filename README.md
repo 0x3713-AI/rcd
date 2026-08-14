@@ -1,35 +1,100 @@
 # RCD - Road Crack Detection
-> Deep Learning-based Road Crack Detection for UAV imagery
+> Deep learning-based road crack detection for UAV imagery.
+
+This repository is an open-ended, reproducible exploration of
+**URCD-YOLO**, the enhanced small-object detector proposed in
+[*Deep learning-based road crack detection for UAV imagery*][paper], and of
+the problem space around it: detecting tiny pavement cracks in low-altitude
+UAV imagery under the conflicting constraints of accuracy, model size, and
+edge-deployability.
+
+The reference paper is just for a starting point. See [papers-and-datasets.md](papers-and-datasets.md)
+for the full list of suggested literature review and dataset catalogue; see
+[CONTRIBUTING.md](CONTRIBUTING.md) for collaboration guidelines.
+
+[paper]: https://doi.org/10.1016/j.eij.2026.100985
+
+## The problem
+
+UAV aerial imagery-based road crack detection faces three core bottlenecks:
+
+1. **High miss rate of tiny cracks** — cracks are fine-grained, low-contrast,
+   and easily lost during multi-scale downsampling.
+2. **Insufficient fine-grained localization accuracy** — bounding boxes on
+   thin, elongated, often fragmented cracks are hard to regress precisely.
+3. **Excessive parameters** — heavy models hinder deployment on UAVs and
+   other resource-constrained edge terminals (e.g. Jetson, RK3588).
+
+## The reference approach: URCD-YOLO
+
+URCD-YOLO is an enhanced small-object detection algorithm built on
+**YOLO11s**, balancing accuracy against a lightweight design via four
+targeted optimizations:
+
+| Module | Where | What it does |
+|---|---|---|
+| **Improved BiFPN** | Neck | Replaces vanilla concatenation with **Softmax-normalized weighted fusion** for bidirectional feature fusion, reducing tiny-crack feature loss and fusion deviation during multi-scale aggregation. |
+| **WADown** (Weighted Adaptive Dual-path Downsampling) | Backbone & neck | Replaces vanilla convolutional downsampling, cutting parameter overhead while preserving micro-crack edge and texture detail. |
+| **WTConv** (Wavelet Transform Convolution) | `C3k2` | Employs cascaded wavelet decomposition to enlarge the receptive field at logarithmic parameter cost, enhancing perception of low-frequency global road features and fine-grained linear crack textures. |
+| **MSCA** (Multi-scale Channel Attention) | Cross-domain | A multi-scale channel attention mechanism forming a spatial + channel + frequency collaborative optimization framework, boosting feature capture for small cracks in complex backgrounds. |
+
+### Reported results (UAV-PDD2023)
+
+Compared to the YOLO11s baseline, the paper reports:
+
+- **+9.1%** improvement in `mAP@0.5`
+- **−9.5%** parameters
+
+positioning URCD-YOLO as a lightweight, high-precision small-object
+detection solution for UAV and edge terminals.
+
+## What we're doing in this repo
+
+This is an open-ended exploration of the premise. We aim to:
+
+- **Reproduce** the URCD-YOLO results on the public **UAV-PDD2023** dataset
+  (`vikhyatk/uav-pdd2023` on Hugging Face).
+- **Ablate** each proposed module (BiFPN-Softmax, WADown, WTConv, MSCA)
+  independently and in combination to understand *why* it helps.
+- **Push the design space** along the directions below.
+
+### Directions worth exploring
+
+Beyond the techniques used in the paper, we consider these promising
+avenues:
+
+- **Vision Transformers & modern detector backbones**: e.g. hybrid
+  CNN-transformer detectors (RT-DETR, DETR family), Swin-based backbones,
+  and attention-centric architectures that may capture long-range crack
+  context better than pure CNN stacks.
+- **Other strong/better architectures**: including, but not limited to, newer YOLO generations, anchor-free
+  detectors, DETR-style query-based detectors, and segment-anything-style
+  foundations
+- **Larger, more diverse datasets** — e.g. the
+  [**Unified Road Defect Dataset**][unified] on Hugging Face, which merges
+  RDD-2022 + UAV-PDD2023 + RoadDamageVision into a 4-class YOLO schema, or
+  the multi-national **RDD-2022**. Cross-dataset generalization is a real
+  test of any crack detector.
+- **Further optimizations** — quantization/ONNX/TensorRT for edge
+  deployment, knowledge distillation, pruning, and NAS-based width/depth
+  search in service of the edge-deployment goal.
+- **Robustness** — weather/illumination augmentation, synthetic-to-real
+  transfer, and evaluation on unseen road surfaces and countries.
+
+All of these are explicitly listed in [papers-and-datasets.md](papers-and-datasets.md)
+with citations.
+
+## Project layout
+
+```
+notebooks/      one marimo notebook per pipeline stage (data_prep, train, eval, ...)
+outputs/        exported run snapshots worth preserving
+pyproject.toml  project dependencies + uv.lock
+```
+note: src/            shared, reused code (pinned in pyproject.toml), src/ will be here when project reaches a stage of going outside notebook experimentations.
 
 
-# Collaboration Guide
-
-This document covers two things every contributor must follow: how we manage
-environments, and how we use git with marimo notebooks. Read before your
-first PR.
-
----
-
-## 1. Environment Reproducibility
-
-We use [`uv`](https://docs.astral.sh/uv/) as the package manager. Do not use
-`pip install` directly in this repo — it will drift from the lockfile and
-break reproducibility for everyone else.
-
-### Why this matters for CV specifically
-
-Computer vision stacks are fragile: `torch`, CUDA build, `opencv-python`,
-`timm`, and driver versions all need to line up. A notebook that runs on
-your machine can silently fail or (worse) silently produce different
-numbers on a teammate's machine if versions drift. We fix this with two
-layers:
-
-1. **Project-level dependencies** — shared code in `src/`, pinned in
-   `pyproject.toml`.
-2. **Notebook-level sandboxing** — experimental notebooks declare their own
-   dependencies inline (PEP 723) and run isolated via `marimo edit --sandbox`.
-
-### Project-level setup
+## Getting started
 
 ```bash
 # one-time: install uv
@@ -37,148 +102,13 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # install project deps from pyproject.toml + uv.lock
 uv sync
+
+# run a notebook
+marimo edit notebooks/data_prep.py
 ```
 
-`uv.lock` is committed to git. **Never hand-edit it.** If you add a
-dependency to `src/` or shared tooling:
+## Contributing
 
-```bash
-uv add torch torchvision
-uv add --dev pytest ruff
-```
-
-This updates `pyproject.toml` and `uv.lock` together — commit both in the
-same PR as the code that needs the new dependency.
-
-### Notebook-level sandboxing
-
-For notebooks under `notebooks/` — especially exploratory or
-experiment-specific ones — declare dependencies at the top of the file
-using inline script metadata:
-
-```python
-# /// script
-# dependencies = [
-#   "torch==2.4.0",
-#   "opencv-python==4.10.0.84",
-#   "timm==1.0.9",
-# ]
-# ///
-
-import marimo
-app = marimo.App()
-```
-
-Run it isolated:
-
-```bash
-marimo edit --sandbox notebooks/train.py
-```
-
-This spins up a throwaway env matching exactly what's declared — not
-whatever happens to be in your global env or `.venv`. It means:
-
-- Two people can run the same notebook with two different torch/CUDA
-  combos and neither breaks the other's setup.
-- A notebook someone wrote three weeks ago still runs exactly the same way
-  today.
-
-### Rule of thumb
-
-| Code lives in | Managed by | Command |
-|---|---|---|
-| `src/` (shared, reused across notebooks) | `pyproject.toml` + `uv.lock` | `uv sync`, `uv add` |
-| `notebooks/*.py` (experiment-specific) | inline PEP 723 block | `marimo edit --sandbox` |
-
-If a dependency is used in more than one notebook, promote it to
-`pyproject.toml` and import from `src/` instead of duplicating version pins
-across notebook headers.
-
----
-
-## 2. Git Workflow
-
-marimo notebooks are stored as plain `.py` files. Treat them like regular
-Python modules in code review — because that's what they are.
-
-### Notebook granularity
-
-**One notebook = one logical pipeline stage.** Don't build a single
-mega-notebook that does data loading, training, and eval all in one file.
-Split by stage:
-
-```
-notebooks/
-  data_prep.py
-  train.py
-  eval.py
-```
-
-Reasons:
-- Smaller, focused diffs.
-- Two people can work on different stages in parallel without touching the
-  same file.
-- Reactive execution stays predictable — a huge single notebook has a huge
-  dependency graph, which makes stale-cell behavior harder to reason about.
-
-### Ownership
-
-No notebook is "owned" silently by one person. Since cells are just
-functions in a `.py` file, anyone can open a PR against any notebook.
-Review it like you'd review a module — read the diff, don't just re-run it
-and eyeball the output.
-
-### Commit messages
-
-Describe the analytical or logical change, not the file operation.
-
-```
-✅ "Add mixup augmentation to training pipeline"
-✅ "Fix off-by-one in bbox IoU calculation"
-❌ "update train.py"
-❌ "wip"
-```
-
-Someone should be able to read `git log --oneline` on a notebook and
-understand the experiment history without opening the file.
-
-### Preserving outputs before merging significant runs
-
-Cell outputs are **not** stored in the `.py` file — only code is. If a run
-produces results worth keeping a record of (a training curve, a
-qualitative eval grid, a metrics table), export a snapshot before merging:
-
-```bash
-marimo export html notebooks/train.py -o outputs/train_run_2026-08-13.html
-```
-
-Commit the exported HTML to `outputs/` (or attach it to the PR) if it's
-worth preserving. This is optional for routine runs — do it when a run
-represents a checkpoint someone will want to reference later (e.g. "the run
-that fixed the augmentation bug").
-
-### Avoid concurrent edits to the same notebook
-
-Merge conflicts on a `.py` file are resolvable with normal git tooling —
-that's the whole point of this setup. But there's a subtler failure mode:
-if two people reorder or restructure cells in the same notebook
-concurrently, the merged file can be syntactically fine but semantically
-broken — the reactive dependency graph no longer matches what either
-person tested.
-
-Mitigation:
-- Split work by pipeline stage (see above) so this rarely comes up.
-- If two people genuinely need to touch the same notebook at once,
-  coordinate — don't just push and hope git merges it cleanly.
-- After any merge that touched a notebook, **re-run it top to bottom**
-  before trusting it. Don't assume a clean merge means a working notebook.
-
-### PR checklist
-
-- [ ] Notebook runs clean top-to-bottom (`marimo edit --sandbox` or
-      `uv run`) before opening the PR
-- [ ] New dependencies added via `uv add`, not hand-edited into
-      `pyproject.toml`
-- [ ] Commit messages describe the analytical change
-- [ ] Shared logic moved to `src/`, not duplicated across notebooks
-- [ ] Significant run outputs exported if worth preserving
+Please read [CONTRIBUTING.md](CONTRIBUTING.md), it covers
+environment reproducibility (uv + PEP 723 sandboxing) and git workflow
+for marimo notebooks.
