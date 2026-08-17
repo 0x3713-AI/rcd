@@ -34,7 +34,7 @@ wandb/
 mlruns/
 lightning_logs/
 checkpoints/
-
+pipeline-reference/
 # --- Media (CV-specific: don't commit images/video generated during runs) ---
 *.jpg
 *.jpeg
