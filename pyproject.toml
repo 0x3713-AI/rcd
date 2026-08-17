@@ -8,9 +8,19 @@ dependencies = [
     "datasets>=5.0.1",
     "matplotlib>=3.11.1",
     "pillow>=12.3.0",
+    "pycocotools>=2.0.11",
+    "timm>=1.0.28",
+    "torch>=2.13.0",
+    "torchmetrics>=1.9.0",
+    "torchvision>=0.28.0",
+    "transformers>=5.15.0",
 ]
 
 [dependency-groups]
 dev = [
     "marimo>=0.23.16",
 ]
+
+[tool.marimo.runtime]
+output_max_bytes = 10_000_000
+
