@@ -31,12 +31,31 @@ def _(dataset):
 
 
 @app.cell
+def _(dataset, mo):
+    slider = mo.ui.slider(0,dataset.num_rows-1)
+    return (slider,)
+
+
+@app.cell
+def _(dataset, slider):
+    dataset[slider.value]
+    return
+
+
+@app.cell
+def _(slider):
+    slider
+    return
+
+
+@app.cell
 def _(dataset):
     class_names = set()
     objects = dataset["objects"]
     for row in objects:
-        for obj in row:
-                class_names.add(obj["name"])
+        for _, obj in enumerate(row):
+        
+            class_names.add(obj["name"])
 
     class_names = list(class_names)
 
@@ -143,12 +162,33 @@ def _(objects_to_yolo):
 @app.cell
 def _(convert_to_yolo, dataset):
     yolo_dataset = dataset.map(convert_to_yolo)
-    return (yolo_dataset,)
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## function to convert to COCO Box
+    """)
+    return
+
+
+@app.function
+def to_cocobox(box,image_size):
+    width, height = image_size
+    
+    x1,y1,x2,y2 = box
+    return [
+        x1*width, 
+        y1*height,
+        (x2 - x1) * width,
+        (y2 - y1) * height
+    ]
 
 
 @app.cell
-def _(yolo_dataset):
-    yolo_dataset[0]
+def _(dataset):
+    to_cocobox(dataset[1323]["objects"][0]["boxes"][0],dataset[1323]["image"].size)
     return
 
 
