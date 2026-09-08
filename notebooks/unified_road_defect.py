@@ -13,26 +13,24 @@ def _():
 
 @app.cell(hide_code=True)
 def _(mo):
-    mo.md(
-        r"""
-        # Unified Road Defect Dataset — data prep & visual annotation
+    mo.md(r"""
+    # Unified Road Defect Dataset — data prep & visual annotation
 
-        **What** — a merged YOLO-format dataset (RDD-2022 + UAV-PDD2023 +
-        RoadDamageVision, 4 classes). It ships as `data/*.tar.gz` webdataset
-        tars in a `images/{train,val}` + `labels/{train,val}` layout, with
-        labels as YOLO `<class> cx cy w h` text files.
+    **What** — a merged YOLO-format dataset (RDD-2022 + UAV-PDD2023 +
+    RoadDamageVision, 4 classes). It ships as `data/*.tar.gz` webdataset
+    tars in a `images/{train,val}` + `labels/{train,val}` layout, with
+    labels as YOLO `<class> cx cy w h` text files.
 
-        **How** — `load_dataset` can't serve it faithfully (the `rdv_*` files
-        come back with `jpg=None` because the webdataset parser mangles their
-        keys), so we extract the tars **once** into `data/unified_road_defect/`
-        and read image + label pairs straight from disk. Boxes are converted to
-        the same `{name, boxes}` schema as `uav_pdd2023.py`, so the annotation
-        code is identical.
+    **How** — `load_dataset` can't serve it faithfully (the `rdv_*` files
+    come back with `jpg=None` because the webdataset parser mangles their
+    keys), so we extract the tars **once** into `data/unified_road_defect/`
+    and read image + label pairs straight from disk. Boxes are converted to
+    the same `{name, boxes}` schema as `uav_pdd2023.py`, so the annotation
+    code is identical.
 
-        **Why** — confirm this merged dataset annotates cleanly, exactly like
-        UAV-PDD2023, before using it for training.
-        """
-    )
+    **Why** — confirm this merged dataset annotates cleanly, exactly like
+    UAV-PDD2023, before using it for training.
+    """)
     return
 
 
@@ -54,7 +52,7 @@ def _():
     from pathlib import Path
 
     DATA_DIR = Path("data/unified_road_defect")
-    return (DATA_DIR, tarfile)
+    return DATA_DIR, tarfile
 
 
 @app.cell

@@ -1,26 +1,53 @@
 [project]
 name = "rcd"
 version = "0.1.0"
-description = "Add your description here"
+description = "Deep learning-based road crack detection for UAV imagery"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "datasets>=5.0.1",
-    "matplotlib>=3.11.1",
-    "pillow>=12.3.0",
-    "pycocotools>=2.0.11",
-    "timm>=1.0.28",
-    "torch>=2.13.0",
-    "torchmetrics>=1.9.0",
-    "torchvision>=0.28.0",
-    "transformers>=5.15.0",
+    "matplotlib>=3.8.0",
+    "numpy>=1.26.0",
+    "pillow>=10.0.0",
+    "pyyaml>=6.0.0",
+    "torch>=2.2.0",
+    "torchvision>=0.17.0",
+    "ultralytics>=8.4.144",
+]
+
+[project.optional-dependencies]
+detr = [
+    "transformers>=4.40.0",
+    "scipy>=1.11.0",
+    "timm>=1.0.29",
+    "accelerate>=1.1.0",
 ]
 
 [dependency-groups]
 dev = [
     "marimo>=0.23.16",
+    "pytest>=8.0.0",
+    "ruff>=0.5.0",
 ]
 
 [tool.marimo.runtime]
 output_max_bytes = 10_000_000
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+torchvision = [{ index = "pytorch-cpu" }]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff.lint.per-file-ignores]
+"notebooks/*" = ["B018", "PLR1711"]
+"demo.py" = ["B018", "PLR1711"]
+
 

@@ -1,180 +1,147 @@
 # Contributing to RCD
 
-This document covers two things every contributor must follow: how we manage
-environments, and how we use git with marimo notebooks. Read before your
-first PR.
+## All contributors must adhere to these standards before opening a pull request.
 
 ---
 
-## 1. Environment Reproducibility
+## 1. Core Engineering Philosophy
 
-We use [`uv`](https://docs.astral.sh/uv/) as the package manager. Do not use
-`pip install` directly in this repo — it will drift from the lockfile and
-break reproducibility for everyone else.
+### A. Lean, Zero-Bloat Dependencies
+- **Avoid heavy wrapper packages.** Prefer standard library, `Pillow` (PIL), and native PyTorch operations over heavy third-party libraries (e.g., avoid `opencv-python-headless`, `albumentations`, or `scipy` unless strictly required).
+- **Consolidate architectures.** Avoid micro-file fragmentation. Keep related data loading, coordinate conversion, and transformations co-located in unified modules (e.g., `pipeline-reference/data.py`).
+- **Dependency Isolation.** Heavy optional frameworks (such as HuggingFace `transformers` for DETR) are segregated into optional dependency groups (`uv sync --extra detr`) to keep core data preparation and YOLO tooling lean and fast.
 
-### Why this matters for CV specifically
+### B. Mathematical & Computational Rigor
+Every bounding box transformation, dataset parser, and model layer must enforce mathematical safety:
+1. **Non-Finite Value Guards:** Explicitly reject `NaN`, `Inf`, and `-Inf` using `math.isfinite()`.
+2. **Inverted Coordinate Healing:** Heal reversed coordinates ($x_1 > x_2$ or $y_1 > y_2$) via $\min(x_1, x_2)$ and $\max(x_1, x_2)$. Never allow negative box widths or heights.
+3. **Unit-Interval Clamping:** Strictly clamp all normalized coordinates to $[0.0, 1.0]$.
+4. **Degenerate Box Filtering:** Filter out degenerate zero-area or sub-pixel boxes ($w < 10^{-5}$ or $h < 10^{-5}$).
+5. **Physical Domain Rules (Orientation Sensitivity):** Pavement distress types distinguish *longitudinal cracks* (class 0) and *transverse cracks* (class 1) strictly by their orientation relative to the road. **Never apply rotation transforms** (e.g. 90° or 270°), as this would invert the ground-truth distress labels. Only horizontal/vertical flips and photometric adjustments are permissible.
+6. **Strict Canonical Class Mapping:** All loaders, exporters, and evaluators must adhere to the locked canonical class map:
+   ```python
+   CANONICAL_CLASS_MAP = {
+       "longitudinal crack": 0,
+       "transverse crack": 1,
+       "oblique crack": 2,
+       "alligator crack": 3,
+       "repair": 4,
+       "pothole": 5,
+   }
+   ```
+   Class names must be parsed case-insensitively and whitespace-tolerantly (`name.strip().lower()`).
 
-Computer vision stacks are fragile: `torch`, CUDA build, `opencv-python`,
-`timm`, and driver versions all need to line up. A notebook that runs on
-your machine can silently fail or (worse) silently produce different
-numbers on a teammate's machine if versions drift. We fix this with two
-layers:
+### C. Standardized Commenting Format
+Every public function, transformation, and significant block of logic must include clean, concise comments matching the pattern:
+```python
+"""
+This function does [action].
+Input: [input type and properties]
+-> Intermediate: [step 1, step 2, ...]
+-> Output: [output type and guarantees]
+"""
+```
 
-1. **Project-level dependencies** — shared code in `src/`, pinned in
-   `pyproject.toml`.
-2. **Notebook-level sandboxing** — experimental notebooks declare their own
-   dependencies inline (PEP 723) and run isolated via `marimo edit --sandbox`.
+---
 
-### Project-level setup
+## 2. Environment Management with `uv`
 
+We use [`uv`](https://docs.astral.sh/uv/) for high-speed, deterministic package management.
+
+> [!WARNING]
+> **Never run bare `pip install` or create loose `requirements.txt` files.** Always use `uv`.
+
+### Setup
 ```bash
-# one-time: install uv
+# 1. Install uv (if not already installed)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# install project deps from pyproject.toml + uv.lock
+# 2. Sync base dependencies (CPU-first wheel index, ~187 MB)
+uv sync
+
+# 3. (Optional) Sync with Detection Transformer dependencies (transformers, scipy)
+uv sync --extra detr
+```
+
+### Adding New Packages
+```bash
+# Add runtime dependency
+uv add <package_name>
+
+# Add development / testing dependency
+uv add --dev <package_name>
+```
+This updates `pyproject.toml` and `uv.lock` deterministically. Always commit both files together.
+
+---
+
+## 3. Hardware Execution: CPU vs. GPU (CUDA)
+
+This repository is designed to be **device-neutral**:
+- **CPU Default (Lightweight Development & CI):** By default, `pyproject.toml` pins PyTorch against the official CPU wheel index (`https://download.pytorch.org/whl/cpu`). This enables developers and CI runners to install and test the entire project without downloading 2.3 GB of CUDA binary wheels.
+- **GPGPU / CUDA Acceleration (Training & Large-Scale Inference):** When training on an NVIDIA GPU (e.g., RTX 5050 or cluster node), install the CUDA-accelerated PyTorch wheels into your virtual environment:
+  ```bash
+  uv pip install --upgrade torch torchvision --index-url https://download.pytorch.org/whl/cu124
+  ```
+  Once installed, all training pipelines (`train.py`) automatically detect CUDA via `torch.cuda.is_available()`, activate `fp16=True` mixed precision, and route batches directly to the GPU.
+
+To revert back to the lean CPU environment:
+```bash
 uv sync
 ```
 
-`uv.lock` is committed to git. **Never hand-edit it.** If you add a
-dependency to `src/` or shared tooling:
+---
 
+## 4. Testing & Code Quality Standards
+
+Every pull request must pass all three test tiers locally:
+
+### 1. Unit & Property Tests (`pytest`)
 ```bash
-uv add torch torchvision
-uv add --dev pytest ruff
+uv run pytest
 ```
+All new exporters, modules, and utilities must include unit tests in the `tests/` directory verifying standard behavior, boundary clamping, and adversarial edge cases.
 
-This updates `pyproject.toml` and `uv.lock` together — commit both in the
-same PR as the code that needs the new dependency.
-
-### Notebook-level sandboxing
-
-For notebooks under `notebooks/` — especially exploratory or
-experiment-specific ones — declare dependencies at the top of the file
-using inline script metadata:
-
-```python
-# /// script
-# dependencies = [
-#   "torch==2.4.0",
-#   "opencv-python==4.10.0.84",
-#   "timm==1.0.9",
-# ]
-# ///
-
-import marimo
-app = marimo.App()
-```
-
-Run it isolated:
-
+### 2. DETR Plumbing & Adversarial Stress Test
 ```bash
-marimo edit --sandbox notebooks/train.py
+uv run python pipeline-reference/test_pipeline_smoke.py
 ```
+Validates synthetic batch flows, DETR model initialization, loss computation, finite gradient flow (zero NaNs), and single-batch loss convergence under optimization.
 
-This spins up a throwaway env matching exactly what's declared — not
-whatever happens to be in your global env or `.venv`. It means:
-
-- Two people can run the same notebook with two different torch/CUDA
-  combos and neither breaks the other's setup.
-- A notebook someone wrote three weeks ago still runs exactly the same way
-  today.
-
-### Rule of thumb
-
-| Code lives in | Managed by | Command |
-|---|---|---|
-| `src/` (shared, reused across notebooks) | `pyproject.toml` + `uv.lock` | `uv sync`, `uv add` |
-| `notebooks/*.py` (experiment-specific) | inline PEP 723 block | `marimo edit --sandbox` |
-
-If a dependency is used in more than one notebook, promote it to
-`pyproject.toml` and import from `src/` instead of duplicating version pins
-across notebook headers.
+### 3. Code Quality & Linting (`ruff`)
+```bash
+uv run ruff check .
+```
+We enforce strict linting and formatting via Ruff. Auto-fixable issues can be addressed with:
+```bash
+uv run ruff check --fix .
+```
 
 ---
 
-## 2. Git Workflow
+## 5. Working with Marimo Notebooks
 
-marimo notebooks are stored as plain `.py` files. Treat them like regular
-Python modules in code review — because that's what they are.
+Interactive notebooks live in `notebooks/` (e.g., `uav_pdd2023.py`, `unified_road_defect.py`).
 
-### Notebook granularity
+1. **Pure Python Format:** Marimo stores notebooks as versionable, standard `.py` files.
+2. **Launch Notebooks:**
+   ```bash
+   uv run marimo edit notebooks/uav_pdd2023.py
+   ```
+3. **Stage Separation:** Keep notebooks modular — one notebook per dataset or analytical milestone.
+4. **Export Significant Artifacts:** If a notebook run produces visual artifacts or metrics worth archiving:
+   ```bash
+   uv run marimo export html notebooks/uav_pdd2023.py -o outputs/uav_pdd2023_analysis.html
+   ```
 
-**One notebook = one logical pipeline stage.** Don't build a single
-mega-notebook that does data loading, training, and eval all in one file.
-Split by stage:
+---
 
-```
-notebooks/
-  data_prep.py
-  train.py
-  eval.py
-```
+## 6. Pre-PR Checklist
 
-Reasons:
-- Smaller, focused diffs.
-- Two people can work on different stages in parallel without touching the
-  same file.
-- Reactive execution stays predictable — a huge single notebook has a huge
-  dependency graph, which makes stale-cell behavior harder to reason about.
-
-### Ownership
-
-No notebook is "owned" silently by one person. Since cells are just
-functions in a `.py` file, anyone can open a PR against any notebook.
-Review it like you'd review a module — read the diff, don't just re-run it
-and eyeball the output.
-
-### Commit messages
-
-Describe the analytical or logical change, not the file operation.
-
-```
-✅ "Add mixup augmentation to training pipeline"
-✅ "Fix off-by-one in bbox IoU calculation"
-❌ "update train.py"
-❌ "wip"
-```
-
-Someone should be able to read `git log --oneline` on a notebook and
-understand the experiment history without opening the file.
-
-### Preserving outputs before merging significant runs
-
-Cell outputs are **not** stored in the `.py` file — only code is. If a run
-produces results worth keeping a record of (a training curve, a
-qualitative eval grid, a metrics table), export a snapshot before merging:
-
-```bash
-marimo export html notebooks/train.py -o outputs/train_run_2026-08-13.html
-```
-
-Commit the exported HTML to `outputs/` (or attach it to the PR) if it's
-worth preserving. This is optional for routine runs — do it when a run
-represents a checkpoint someone will want to reference later (e.g. "the run
-that fixed the augmentation bug").
-
-### Avoid concurrent edits to the same notebook
-
-Merge conflicts on a `.py` file are resolvable with normal git tooling —
-that's the whole point of this setup. But there's a subtler failure mode:
-if two people reorder or restructure cells in the same notebook
-concurrently, the merged file can be syntactically fine but semantically
-broken — the reactive dependency graph no longer matches what either
-person tested.
-
-Mitigation:
-- Split work by pipeline stage (see above) so this rarely comes up.
-- If two people genuinely need to touch the same notebook at once,
-  coordinate — don't just push and hope git merges it cleanly.
-- After any merge that touched a notebook, **re-run it top to bottom**
-  before trusting it. Don't assume a clean merge means a working notebook.
-
-### PR checklist
-
-- [ ] Notebook runs clean top-to-bottom (`marimo edit --sandbox` or
-      `uv run`) before opening the PR
-- [ ] New dependencies added via `uv add`, not hand-edited into
-      `pyproject.toml`
-- [ ] Commit messages describe the analytical change
-- [ ] Shared logic moved to `src/`, not duplicated across notebooks
-- [ ] Significant run outputs exported if worth preserving
+Before submitting a pull request, ensure:
+- [ ] `uv run pytest` passes 100% of unit and invariant tests.
+- [ ] `uv run python pipeline-reference/test_pipeline_smoke.py` passes cleanly.
+- [ ] `uv run ruff check .` reports zero errors.
+- [ ] No temporary files, `.DS_Store`, or raw dataset folders (`data/`) are staged for git commit.
+- [ ] Comments follow the `# Input: ... -> Intermediate: ... -> Output: ...` convention.
+- [ ] All coordinates are guarded against non-finite values and out-of-bounds errors.
